@@ -1,0 +1,119 @@
+global class TicketMessageServiceApex implements Messaging.InboundEmailHandler {
+    global Messaging.InboundEmailResult handleInboundEmail(Messaging.InboundEmail email, Messaging.InboundEnvelope envelope) {
+        Messaging.InboundEmailResult result = new Messaging.InboundEmailResult();
+        
+        String csvFile = null;
+        
+        for (Messaging.InboundEmail.BinaryAttachment att : email.binaryAttachments) {
+            if (att.fileName.endsWith('.csv')) {
+                csvFile = att.body.toString();
+                break;
+            }
+        }
+        
+        if (csvFile == null) {
+            return result;
+        }
+        
+        SimpleCsvReader csvReader = new SimpleCsvReader(csvFile);
+        
+        String[] headers = csvReader.readLine();
+        
+        String[] data;
+        String ConcertName;
+        Id CustomerId;
+        Integer numberofTickets;
+        
+        String debugMessage1 = '';
+        String debugMessage2 = '';
+        
+        List<Ticket__c> ticketToInsert = new List<Ticket__c>();
+        List<TicketMessageData> ticketDataList = new List<TicketMessageData>(); 
+        
+        while ((data = csvReader.readLine()) != null) {
+            ConcertName = data[0];
+            
+            String customerIdString = data[1];
+            if (customerIdString != null) {
+                customerIdString = customerIdString.trim();
+                try {
+                    CustomerId = (Id)customerIdString;
+                } catch (Exception ex) {
+                    System.debug('Invalid customer ID: ' + customerIdString);
+                    debugMessage1 += 'Invalid customer ID: ' + customerIdString + '\n';
+                }
+            }
+            
+            numberofTickets = Integer.valueOf(data[2].trim());
+            
+            
+            System.debug('ConcertName+++++++' + ConcertName);
+            System.debug('CustomerId++++++++' + CustomerId);
+            
+            List<Concert__c> concerts = [SELECT Id, Name, Venue__c, Date__c FROM Concert__c WHERE Name =:ConcertName];
+            if (!concerts.isEmpty()) {                
+                Ticket__c tkt = new Ticket__c(Customer__c = CustomerId , Concert__c = concerts[0].Id , Number_of_Tickets__c = numberofTickets);
+                ticketToInsert.add(tkt);
+            } else {
+                System.debug('No concert found with name: ' + ConcertName);
+                debugMessage2 += 'No concert found with name: ' + ConcertName + '\n'; 
+            }
+            
+            System.debug('Concert Name: ' + ConcertName);
+            System.debug('Customer Id: ' + CustomerId);
+            System.debug('Number of Tickets: ' + numberofTickets);
+            System.debug('Debug Message 1: ' + debugMessage1);
+            System.debug('Debug Message 2: ' + debugMessage2);
+            
+            
+            TicketMessageData ticketData = new TicketMessageData(ConcertName, CustomerId, numberofTickets, debugMessage1, debugMessage2);
+            ticketDataList.add(ticketData);
+            System.debug('ticketDataList' + ticketDataList);
+            
+        }
+        
+        if (!ticketToInsert.isEmpty()) {
+            Database.insert(ticketToInsert);
+        }
+                
+        string header = 'Concert Name, Customer Id, Number of Tickets, Debug Message 1, Debug Message 2 \n';
+        string finalcsv = header ;
+        string ticketString;
+        
+        for(TicketMessageData ticketData : ticketDataList){
+            ticketString = '"'+ticketData.ConcertName+'","'+ticketData.CustomerId+'","'+ticketData.numberofTickets+'","'+ticketData.debugMessage1+'","'+ticketData.debugMessage2+'"\n'; 
+            finalcsv = finalcsv + ticketString;
+        }
+        
+        System.debug('ticketString' + ticketString);
+        
+        Document newcsv = new Document(
+            FolderId = UserInfo.getUserId(),
+            Name = 'TicketsError.csv',
+            Body = Blob.valueOf(finalcsv)
+        );
+        insert newcsv;
+        System.debug('CSV' + newcsv);
+        
+        String ErrorCsv = 'ErrorCsv.csv';
+        String subject = 'Error Creating Tickets';
+        String body = 'Error Creating Tickets View CSV attachment for info.';
+        String senderEmail = email.fromAddress;
+        
+        Messaging.SingleEmailMessage errorEmail = new Messaging.SingleEmailMessage(); 
+        Messaging.EmailFileAttachment csvAttachment = new Messaging.EmailFileAttachment();
+        csvAttachment.setFileName(ErrorCsv);
+        csvAttachment.setBody(Blob.valueOf(finalcsv));
+        errorEmail.setSubject( subject );
+        errorEmail.setToAddresses( new String[] {senderEmail} );
+        errorEmail.setPlainTextBody( body );
+        errorEmail.setFileAttachments(new Messaging.EmailFileAttachment[] {csvAttachment});
+        Messaging.SendEmailResult [] emailResult = Messaging.sendEmail(new Messaging.SingleEmailMessage[] {errorEmail});
+        if (emailResult[0].isSuccess()) {
+            System.debug('Email sent successfully.');
+        } else {
+            System.debug('Failed to send email: ' + emailResult[0].getErrors()[0].getMessage());
+        }        
+        return result;
+    }   
+}

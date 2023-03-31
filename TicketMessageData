@@ -1,0 +1,15 @@
+public class TicketMessageData {
+    public String concertName {get; set;}
+    public Id customerId {get; set;}
+    public Integer numberOfTickets {get; set;}
+    public String debugMessage1 {get; set;}
+    public String debugMessage2 {get; set;}
+    
+    public TicketMessageData(String concertName, Id customerId, Integer numberOfTickets, String debugMessage1, String debugMessage2) {
+        this.concertName = concertName;
+        this.customerId = customerId;
+        this.numberOfTickets = numberOfTickets;
+        this.debugMessage1 = debugMessage1;
+        this.debugMessage2 = debugMessage2;
+    }
+}
